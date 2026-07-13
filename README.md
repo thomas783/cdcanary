@@ -6,6 +6,8 @@
 
 **A canary for your CDC pipeline — catches silent replication drift before your analysts do.**
 
+![CDCanary demo — one scan catches four kinds of silent drift](docs/demo.gif)
+
 CDC pipelines fail loudly when they crash — and silently when they don't.
 A column added mid-stream lands as `NULL` in your warehouse. A backfill quietly
 skips rows. Replication lag creeps from minutes to days. No error, no alert.
@@ -79,6 +81,21 @@ Then make it permanent — generate a config and put `check` on a schedule:
 ```bash
 cdcanary init --discover --source mysql://... --target bigquery://...
 cdcanary check -c cdcanary.yml        # cron / GitHub Actions / Airflow
+```
+
+### Try the demo locally
+
+The GIF above is a real run. [`examples/demo`](examples/demo) spins up a MySQL
+"source" and a PostgreSQL "replica" with four kinds of drift deliberately baked
+in — a missing table, stalled replication, schema drift, and the NULL-corruption
+case this tool exists for:
+
+```bash
+cd examples/demo && docker compose up -d --wait
+cdcanary scan \
+  --source mysql://root:demo@127.0.0.1:13306/shop \
+  --target postgres://demo:demo@127.0.0.1:15432/shop/public
+docker compose down -v   # cleanup
 ```
 
 ## Configuration
