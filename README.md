@@ -188,6 +188,10 @@ Exit codes are cron-friendly: `0` all green · `1` warnings · `2` failures.
 - [ ] v0.2 — baseline state (trend-based anomaly instead of fixed thresholds)
 - [ ] v0.3 — Snowflake connector, Prometheus exporter
 
+## Releasing
+
+See [RELEASING.md](RELEASING.md) — tags publish to PyPI via trusted publishing.
+
 ## License
 
 MIT
