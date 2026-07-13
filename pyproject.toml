@@ -1,0 +1,45 @@
+[project]
+name = "cdcanary"
+version = "0.1.0"
+description = "A canary for your CDC pipeline — catches silent replication drift before your analysts do."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Haryong Song" }]
+requires-python = ">=3.10"
+keywords = ["cdc", "replication", "data-quality", "monitoring", "bigquery", "debezium", "datastream"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Database",
+  "Topic :: System :: Monitoring",
+]
+dependencies = [
+  "click>=8.1",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+mysql = ["pymysql>=1.1"]
+postgres = ["psycopg[binary]>=3.1"]
+bigquery = ["google-cloud-bigquery>=3.11"]
+all = ["cdcanary[mysql,postgres,bigquery]"]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+
+[project.scripts]
+cdcanary = "cdcanary.cli:main"
+
+[project.urls]
+Repository = "https://github.com/thomas783/cdcanary"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cdcanary"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
