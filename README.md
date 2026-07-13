@@ -1,0 +1,172 @@
+# 🐤 CDCanary
+
+**A canary for your CDC pipeline — catches silent replication drift before your analysts do.**
+
+CDC pipelines fail loudly when they crash — and silently when they don't.
+A column added mid-stream lands as `NULL` in your warehouse. A backfill quietly
+skips rows. Replication lag creeps from minutes to days. No error, no alert.
+Someone finds out three months later, in a business meeting, with a wrong number
+on the slide.
+
+CDCanary is a lightweight monitor that runs aggregate consistency checks
+between your **source** and **replica** on a schedule, and pings Slack when they
+disagree.
+
+```
+┌──────────┐   CDC (Datastream / Debezium / Fivetran / ...)   ┌───────────┐
+│  MySQL   │ ───────────────────────────────────────────────▶ │ BigQuery  │
+└────┬─────┘                                                  └─────┬─────┘
+     │                    ┌───────────┐                             │
+     └───── aggregate ───▶│ 🐤 CDCanary│◀──── aggregate queries ────┘
+            queries       └─────┬─────┘
+                                │  row delta · freshness · null-rate · schema drift
+                                ▼
+                            Slack alert
+```
+
+## Approach
+
+CDCanary deliberately does **not** do row-level diffing. Aggregate signals
+(counts, timestamps, null fractions, schemas) catch the failure modes that
+actually happen in CDC pipelines, run in seconds on billion-row tables, and
+keep the adapter surface small enough to maintain. It monitors continuously —
+this is a canary you run from cron, not a one-off migration validator.
+
+The known blind spot: rows whose *values* are wrong while counts and null
+rates still match (e.g. lost UPDATE events). A sampled-checksum check is on
+the roadmap to cover that probabilistically without paying full-diff costs.
+
+## Checks
+
+| Check | Signal | Catches |
+|---|---|---|
+| `row_delta` | source vs target row count (windowed) | dropped rows, stalled backfill |
+| `freshness` | source vs target `max(updated_at)` lag | replication lag, dead connector |
+| `null_rate` | source vs target null fraction per column | **schema-drift NULL corruption** |
+| `schema_drift` | column set + coarse types | added/missing columns, type changes |
+
+All checks are symmetric aggregate queries — any supported connector can be a
+source *or* a target. 3 connectors = 9 directions, including reverse ETL
+(BigQuery → MySQL) and same-engine replicas (PostgreSQL → PostgreSQL).
+
+## Connectors (v0.1)
+
+MySQL · PostgreSQL · BigQuery
+
+## Quickstart
+
+Zero config — point it at both ends and see what disagrees:
+
+```bash
+pip install cdcanary[mysql,bigquery]
+
+cdcanary scan \
+  --source mysql://readonly:$PW@prod-db/shop \
+  --target bigquery://my-project/raw_shop
+
+# ✅ ok    shop.orders    row_delta      rows match: 1,204,331 vs 1,204,318 (Δ0.00%)
+# ✅ ok    shop.orders    freshness      replication lag 4m (within limit)
+# 🔴 FAIL  shop.products  null_rate      null-rate drift: sale_status (src 0.0% vs tgt 5.9%)
+# 🔴 FAIL  shop.coupons   table_presence table exists in source but not in target
+```
+
+Then make it permanent — generate a config and put `check` on a schedule:
+
+```bash
+cdcanary init --discover --source mysql://... --target bigquery://...
+cdcanary check -c cdcanary.yml        # cron / GitHub Actions / Airflow
+```
+
+## Configuration
+
+Config describes **rules, not snapshots**. A schema pair re-discovers tables
+on every run, so tables added or dropped at the source are picked up without
+config edits — and a new source table that hasn't reached the target yet is
+itself a finding (`table_presence`).
+
+```yaml
+connections:
+  mysql_prod:
+    type: mysql
+    host: prod-db.internal
+    database: shop
+    user: readonly
+    password: env:MYSQL_PASSWORD      # secrets always come from the environment
+
+  bq_raw:
+    type: bigquery
+    project: my-project
+    credentials: env:GOOGLE_APPLICATION_CREDENTIALS
+
+pairs:
+  - name: shop
+    source: { connection: mysql_prod, schema: shop }
+    target: { connection: bq_raw, schema: raw_shop }
+    tables: ["*", "!tmp_*"]
+    # target_table: "shop_{table}"   # uncomment if the CDC tool renames tables           # globs; "!" excludes
+    defaults:                         # applied to every discovered table
+      row_delta:    { tolerance_pct: 0.5 }
+      freshness:    { column: auto, max_lag_minutes: 60 }
+      null_rate:    { columns: auto, max_diff_pp: 1.0 }
+      schema_drift: { ignore_columns: [datastream_metadata] }
+    overrides:                        # applied top-to-bottom; later rules win
+      - match: "log_*"                # glob, exact name, or a list of either
+        checks:
+          null_rate: false            # too big — skip the expensive check
+      - match: orders
+        checks:
+          freshness: { column: paid_at, max_lag_minutes: 30 }
+      - match: users
+        target_table: customers       # irregular rename, right next to its exceptions
+
+  # Single-table pair — for tables that deserve hand-tuned checks.
+  # Can point across schemas/names and coexist with schema pairs above.
+  - name: payments
+    source: { connection: mysql_prod, table: shop.payments }
+    target: { connection: bq_raw, table: raw_shop.payments_v2 }
+    checks:
+      row_delta: { tolerance_pct: 0.1, where: "created_at < CURRENT_DATE" }
+      freshness: { column: paid_at, max_lag_minutes: 15 }
+      null_rate: { columns: [amount, status], max_diff_pp: 0.5 }
+
+alerts:
+  slack_webhook: env:CDCANARY_SLACK_WEBHOOK
+```
+
+`column: auto` picks the first timestamp column by convention
+(`updated_at`, `modified_at`, `created_at`, ...); `columns: auto` compares
+every column present on both sides. Schema pairs and table pairs can be mixed
+freely — broad coverage from discovery, precise thresholds where it counts.
+
+Table names that differ between source and target are handled in two layers:
+a pair-level `target_table: "shop_{table}"` template for systematic renames
+(CDC tools usually rename uniformly), and per-table `target_table` in
+`overrides` for the irregular few. If the mapping has no pattern at all,
+single-table pairs are the honest answer.
+
+Exit codes are cron-friendly: `0` all green · `1` warnings · `2` failures.
+
+## Non-goals
+
+- **Row-level diffing** — full row comparison fits one-off migration
+  validation better than scheduled monitoring. CDCanary sticks to aggregate
+  queries so checks stay fast and cheap enough to run every hour, and
+  connectors stay small. A sampled-checksum check is planned for value-level
+  verification (see roadmap).
+- **Auto-remediation** — CDCanary detects and alerts; deciding how to fix a
+  pipeline is left to a human.
+- **Web dashboard** — results are available as terminal output, `--json`, and
+  Slack alerts, which integrate with whatever dashboarding you already run.
+
+## Roadmap
+
+- [ ] v0.1 — 4 checks, 3 connectors, Slack alerts, CLI
+- [ ] v0.2 — `sampled_checksum` check: hash-compare a sampled PK range on both
+      sides — catches value-level corruption (e.g. lost UPDATE events) that
+      aggregate signals can't see, without the cost of a full row diff
+- [ ] v0.2 — baseline state (trend-based anomaly instead of fixed thresholds)
+- [ ] v0.3 — Snowflake connector, Prometheus exporter
+
+## License
+
+MIT
