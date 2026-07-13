@@ -1,5 +1,9 @@
 # 🐤 CDCanary
 
+[![CI](https://github.com/thomas783/cdcanary/actions/workflows/ci.yml/badge.svg)](https://github.com/thomas783/cdcanary/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+
 **A canary for your CDC pipeline — catches silent replication drift before your analysts do.**
 
 CDC pipelines fail loudly when they crash — and silently when they don't.
