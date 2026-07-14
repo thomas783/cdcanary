@@ -5,36 +5,37 @@ are stored in the repository or its secrets.
 
 [trusted publishing]: https://docs.pypi.org/trusted-publishers/
 
-## One-time setup (repository owner)
-
-1. Create/log into a PyPI account and open
-   **Publishing → Add a new pending publisher** (or the project's
-   *Publishing* settings once it exists) and register:
-
-   | field | value |
-   |---|---|
-   | PyPI project name | `cdcanary` |
-   | Owner | `thomas783` |
-   | Repository | `cdcanary` |
-   | Workflow name | `release.yml` |
-   | Environment | `pypi` |
-
-2. In this GitHub repository: **Settings → Environments → New environment**
-   named `pypi` (optionally add yourself as a required reviewer so every
-   release needs a manual click).
-
 ## Cutting a release
 
 ```bash
-# 1. bump `version` in pyproject.toml, commit via PR
+# 1. bump `version` in pyproject.toml, land it on main via PR
 # 2. tag and push
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
-The `Release` workflow then lints, tests, builds the sdist + wheel, and
-publishes to PyPI. Verify with:
+The `Release` workflow lints, tests, builds the sdist + wheel, and publishes
+to PyPI. Then create a GitHub release for the tag and verify:
 
 ```bash
-pip install cdcanary && cdcanary --version
+pip install --upgrade cdcanary && cdcanary --version
 ```
+
+## Publisher configuration (already set up)
+
+The PyPI trusted publisher and the GitHub `pypi` environment are already
+configured for this repository. You only need this again if you fork the
+project or re-create the PyPI project:
+
+| field | value |
+|---|---|
+| PyPI project name | `cdcanary` |
+| Owner | `thomas783` |
+| Repository | `cdcanary` |
+| Workflow name | `release.yml` |
+| Environment | `pypi` |
+
+Register these under **PyPI → project → Publishing** (or *pending publisher*
+if the project doesn't exist yet), and create a matching `pypi` environment
+in GitHub **Settings → Environments** — optionally with a required reviewer
+to gate releases.
