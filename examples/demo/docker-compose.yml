@@ -1,5 +1,7 @@
 # CDCanary demo — a MySQL "source" and a PostgreSQL "replica" with
 # deliberately injected replication drift. See ../../README.md.
+name: cdcanary-demo
+
 services:
   source:
     image: mysql:8.4
