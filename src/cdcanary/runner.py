@@ -28,9 +28,11 @@ def _register_builtins() -> None:
     from cdcanary.checks.freshness import FreshnessCheck
     from cdcanary.checks.null_rate import NullRateCheck
     from cdcanary.checks.row_delta import RowDeltaCheck
+    from cdcanary.checks.sampled_checksum import SampledChecksumCheck
     from cdcanary.checks.schema_drift import SchemaDriftCheck
 
-    for check in (RowDeltaCheck, FreshnessCheck, NullRateCheck, SchemaDriftCheck):
+    for check in (RowDeltaCheck, FreshnessCheck, NullRateCheck, SchemaDriftCheck,
+                  SampledChecksumCheck):
         CHECKS[check.name] = check
 
     from cdcanary.adapters.bigquery import BigQueryAdapter

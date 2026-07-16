@@ -50,8 +50,9 @@ the roadmap to cover that probabilistically without paying full-diff costs.
 | `freshness` | source vs target `max(updated_at)` lag | replication lag, dead connector |
 | `null_rate` | source vs target null fraction per column | **schema-drift NULL corruption** |
 | `schema_drift` | column set + coarse types | added/missing columns, type changes |
+| `sampled_checksum` | row contents on a sampled key set (newest half + a rotating spread across the whole range) | **value-level corruption** — lossy casts, tz shifts, lost updates |
 
-All checks are symmetric aggregate queries — any supported connector can be a
+Aggregate checks are symmetric queries — any supported connector can be a
 source *or* a target. 3 connectors = 9 directions, including reverse ETL
 (BigQuery → MySQL) and same-engine replicas (PostgreSQL → PostgreSQL).
 
@@ -70,10 +71,11 @@ cdcanary scan \
   --source mysql://readonly:$PW@prod-db/shop \
   --target bigquery://my-project/raw_shop
 
-# ✅ ok    shop.orders    row_delta      rows match: 1,204,331 vs 1,204,318 (Δ0.00%)
-# ✅ ok    shop.orders    freshness      replication lag 4m (within limit)
-# 🔴 FAIL  shop.products  null_rate      null-rate drift: sale_status (src 0.0% vs tgt 5.9%)
-# 🔴 FAIL  shop.coupons   table_presence table exists in source but not in target
+# ✅ ok    shop.orders    row_delta        rows match: 1,204,331 vs 1,204,318 (Δ0.00%)
+# ✅ ok    shop.orders    freshness        replication lag 4m (within limit)
+# 🔴 FAIL  shop.products  null_rate        null-rate drift: sale_status (src 0.0% vs tgt 5.9%)
+# 🔴 FAIL  shop.products  sampled_checksum row content drift: 6/90 sampled rows differ (cols: price; e.g. id=75)
+# 🔴 FAIL  shop.coupons   table_presence   table exists in source but not in target
 ```
 
 Then make it permanent — generate a config and put `check` on a schedule:
@@ -180,11 +182,11 @@ Exit codes are cron-friendly: `0` all green · `1` warnings · `2` failures.
 
 ## Non-goals
 
-- **Row-level diffing** — full row comparison fits one-off migration
-  validation better than scheduled monitoring. CDCanary sticks to aggregate
-  queries so checks stay fast and cheap enough to run every hour, and
-  connectors stay small. A sampled-checksum check is planned for value-level
-  verification (see roadmap).
+- **Full row-level diffing** — comparing every row fits one-off migration
+  validation better than scheduled monitoring. CDCanary keeps checks fast and
+  cheap enough to run every hour: aggregates for the broad signals, plus
+  `sampled_checksum` on a small deterministic sample for value-level
+  verification — never a full-table diff.
 - **Auto-remediation** — CDCanary detects and alerts; deciding how to fix a
   pipeline is left to a human.
 - **Web dashboard** — results are available as terminal output, `--json`, and
@@ -192,10 +194,12 @@ Exit codes are cron-friendly: `0` all green · `1` warnings · `2` failures.
 
 ## Roadmap
 
-- [ ] v0.1 — 4 checks, 3 connectors, Slack alerts, CLI
-- [ ] v0.2 — `sampled_checksum` check: hash-compare a sampled PK range on both
-      sides — catches value-level corruption (e.g. lost UPDATE events) that
-      aggregate signals can't see, without the cost of a full row diff
+- [x] v0.1 — 4 checks, 3 connectors, Slack alerts, CLI
+- [x] v0.2 — `sampled_checksum` check: compare row contents on a sampled key
+      set (newest half for fresh breakage + a rotating spread that walks the
+      whole table across runs, so lost UPDATEs on old rows surface too) —
+      value-level corruption that aggregate signals can't see, without the
+      cost of a full row diff
 - [ ] v0.2 — baseline state (trend-based anomaly instead of fixed thresholds)
 - [ ] v0.3 — Snowflake connector, Prometheus exporter
 
