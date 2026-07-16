@@ -70,3 +70,32 @@ class Adapter(ABC):
         run, so tables added or dropped at the source enter/leave monitoring
         without config edits.
         """
+
+    # ── row sampling (sampled_checksum) ──────────────────────────────────
+    # Values come back as driver-native Python objects; normalization for
+    # cross-engine comparison happens in the check, in one place — pushing it
+    # into per-dialect SQL rendering is the swamp this design avoids.
+
+    @abstractmethod
+    def primary_key(self, table: str) -> str | None:
+        """Single-column primary key name, or None (absent, composite, or the
+        engine has no enforced keys — BigQuery)."""
+
+    @abstractmethod
+    def sample_keys(self, table: str, key: str, n: int) -> list:
+        """Newest n key values (ORDER BY key DESC) — CDC drift shows up in
+        recent rows first."""
+
+    @abstractmethod
+    def sample_keys_spread(self, table: str, key: str, n: int,
+                           modulus: int, remainder: int) -> list:
+        """Up to n key values with MOD(key, modulus) = remainder — a slice
+        spread across the whole key range. Rotating the remainder between runs
+        walks the entire table over time, which is what catches drift in *old*
+        rows (lost UPDATEs, bad backfills) that a newest-N window never
+        revisits. Numeric keys only; callers fall back to sample_keys."""
+
+    @abstractmethod
+    def fetch_rows(self, table: str, key: str, keys: list, columns: list[str]) -> dict:
+        """{key_value: {column: value}} for the given key values. Keys absent
+        from the table are simply absent from the dict."""

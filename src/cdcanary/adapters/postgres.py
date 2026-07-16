@@ -74,3 +74,42 @@ class PostgresAdapter(Adapter):
                 "SELECT table_name FROM information_schema.tables "
                 "WHERE table_schema = %s AND table_type = 'BASE TABLE'", (namespace,))
             return sorted(r[0] for r in cur.fetchall())
+
+    def primary_key(self, table: str) -> str | None:
+        schema, _, tbl = table.rpartition(".")
+        schema = schema or "public"
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT kcu.column_name "
+                "FROM information_schema.table_constraints tc "
+                "JOIN information_schema.key_column_usage kcu "
+                "  ON kcu.constraint_name = tc.constraint_name "
+                " AND kcu.table_schema = tc.table_schema "
+                "WHERE tc.table_schema = %s AND tc.table_name = %s "
+                "  AND tc.constraint_type = 'PRIMARY KEY' "
+                "ORDER BY kcu.ordinal_position", (schema, tbl))
+            rows = cur.fetchall()
+        return rows[0][0] if len(rows) == 1 else None
+
+    def sample_keys(self, table: str, key: str, n: int) -> list:
+        with self._conn.cursor() as cur:
+            cur.execute(f"SELECT {key} FROM {table} ORDER BY {key} DESC LIMIT %s", (int(n),))
+            return [r[0] for r in cur.fetchall()]
+
+    def sample_keys_spread(self, table: str, key: str, n: int,
+                           modulus: int, remainder: int) -> list:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {key} FROM {table} WHERE MOD({key}, %s) = %s "
+                f"ORDER BY {key} DESC LIMIT %s",
+                (int(modulus), int(remainder), int(n)))
+            return [r[0] for r in cur.fetchall()]
+
+    def fetch_rows(self, table: str, key: str, keys: list, columns: list[str]) -> dict:
+        if not keys:
+            return {}
+        cols = ", ".join(columns)
+        with self._conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {key}, {cols} FROM {table} WHERE {key} = ANY(%s)", (list(keys),))
+            return {r[0]: dict(zip(columns, r[1:])) for r in cur.fetchall()}

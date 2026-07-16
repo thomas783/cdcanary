@@ -30,6 +30,8 @@ DEFAULT_CHECKS = {
     "freshness": {"column": "auto", "max_lag_minutes": 60},
     "null_rate": {"columns": "auto", "max_diff_pp": 1.0},
     "schema_drift": {},
+    # quietly skips tables without a single-column primary key
+    "sampled_checksum": {"key": "auto", "sample_size": 100},
 }
 
 EXAMPLE_CONFIG = """\
@@ -55,10 +57,11 @@ pairs:
     tables: ["*", "!tmp_*"]
     # target_table: "shop_{table}"   # uncomment if the CDC tool renames tables
     defaults:
-      row_delta:    { tolerance_pct: 0.5 }
-      freshness:    { column: auto, max_lag_minutes: 60 }
-      null_rate:    { columns: auto, max_diff_pp: 1.0 }
-      schema_drift: { ignore_columns: [datastream_metadata] }
+      row_delta:        { tolerance_pct: 0.5 }
+      freshness:        { column: auto, max_lag_minutes: 60 }
+      null_rate:        { columns: auto, max_diff_pp: 1.0 }
+      schema_drift:     { ignore_columns: [datastream_metadata] }
+      sampled_checksum: { key: auto, sample_size: 100 }   # strategy: mixed — newest half + rotating spread
     overrides:                       # applied top-to-bottom; later rules win
       - match: "log_*"               # glob, exact name, or a list of either
         checks:
@@ -87,8 +90,9 @@ def _print_results(results: list[CheckResult], as_json: bool) -> None:
         click.echo(json.dumps([asdict(r) for r in results], default=str, ensure_ascii=False))
         return
     width = max((len(r.pair) for r in results), default=4)
+    cwidth = max((len(r.check) for r in results), default=10)
     for r in results:
-        click.echo(f"{_STATUS_MARK[r.status]}  {r.pair:<{width}}  {r.check:<14}  {r.message}")
+        click.echo(f"{_STATUS_MARK[r.status]}  {r.pair:<{width}}  {r.check:<{cwidth}}  {r.message}")
 
 
 def _scan_config(source: str, target: str, tables: tuple[str, ...]) -> config_mod.Config:

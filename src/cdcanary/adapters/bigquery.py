@@ -79,3 +79,31 @@ class BigQueryAdapter(Adapter):
                f"FROM `{self.config['project']}.{namespace}`.INFORMATION_SCHEMA.TABLES "
                f"WHERE table_type = 'BASE TABLE'")
         return sorted(r[0] for r in self._client.query(sql).result())
+
+    def primary_key(self, table: str) -> str | None:
+        # BigQuery has no enforced primary keys — sampled_checksum needs an
+        # explicit `key:` in config when BQ is the source.
+        return None
+
+    def sample_keys(self, table: str, key: str, n: int) -> list:
+        sql = f"SELECT {key} FROM {self._fq(table)} ORDER BY {key} DESC LIMIT {int(n)}"
+        return [r[0] for r in self._client.query(sql).result()]
+
+    def sample_keys_spread(self, table: str, key: str, n: int,
+                           modulus: int, remainder: int) -> list:
+        sql = (f"SELECT {key} FROM {self._fq(table)} "
+               f"WHERE MOD({key}, {int(modulus)}) = {int(remainder)} "
+               f"ORDER BY {key} DESC LIMIT {int(n)}")
+        return [r[0] for r in self._client.query(sql).result()]
+
+    def fetch_rows(self, table: str, key: str, keys: list, columns: list[str]) -> dict:
+        if not keys:
+            return {}
+        from google.cloud import bigquery
+
+        cols = ", ".join(columns)
+        sql = f"SELECT {key}, {cols} FROM {self._fq(table)} WHERE {key} IN UNNEST(@keys)"
+        key_type = "INT64" if isinstance(keys[0], int) else "STRING"
+        job = self._client.query(sql, job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ArrayQueryParameter("keys", key_type, list(keys))]))
+        return {r[0]: dict(zip(columns, r[1:])) for r in job.result()}
