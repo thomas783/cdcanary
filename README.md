@@ -88,9 +88,10 @@ cdcanary check -c cdcanary.yml        # cron / GitHub Actions / Airflow
 ### Try the demo locally
 
 The GIF above is a real run. [`examples/demo`](examples/demo) spins up a MySQL
-"source" and a PostgreSQL "replica" with four kinds of drift deliberately baked
-in — a missing table, stalled replication, schema drift, and the NULL-corruption
-case this tool exists for:
+"source" and a PostgreSQL "replica" with five kinds of drift deliberately baked
+in — a missing table, stalled replication, schema drift, a lossy price cast
+only row-content sampling can see, and the NULL-corruption case this tool
+exists for:
 
 ```bash
 cd examples/demo && docker compose up -d --wait

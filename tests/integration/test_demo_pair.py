@@ -1,6 +1,6 @@
 """Real-database integration: the demo pair, promoted to a test.
 
-examples/demo seeds a MySQL "source" and a Postgres "replica" with four kinds
+examples/demo seeds a MySQL "source" and a Postgres "replica" with five kinds
 of drift deliberately baked in. Here the same seed files boot in throwaway
 testcontainers, the real adapters connect (dialect SQL, coarse-type
 normalization — code the unit suite never touches), and every seeded drift
@@ -99,3 +99,16 @@ class TestSeededDrift:
     def test_stalled_connector_detected(self, results):
         assert results[("shop.events", "freshness")].status is Status.FAIL
         assert results[("shop.events", "row_delta")].status is Status.FAIL
+        # the newest source rows never arrived — content sampling names that too
+        r = results[("shop.events", "sampled_checksum")]
+        assert r.status is Status.FAIL
+        assert "missing at target" in r.message
+
+    def test_lossy_cast_detected_only_by_checksum(self, results):
+        # six replica rows have price off by 7 cents: counts, nulls, schema and
+        # freshness all pass — this drift exists purely at the value level
+        r = results[("shop.products", "sampled_checksum")]
+        assert r.status is Status.FAIL
+        assert "price" in r.message
+        assert r.metrics["differing_rows"] >= 6
+        assert results[("shop.products", "row_delta")].status is Status.OK
