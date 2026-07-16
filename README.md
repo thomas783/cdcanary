@@ -56,6 +56,34 @@ Aggregate checks are symmetric queries — any supported connector can be a
 source *or* a target. 3 connectors = 9 directions, including reverse ETL
 (BigQuery → MySQL) and same-engine replicas (PostgreSQL → PostgreSQL).
 
+## Performance
+
+Measured on a PostgreSQL 16 ↔ PostgreSQL 16 pair in local Docker
+(Apple Silicon), single `orders`-shaped table, default options:
+
+| check | 10M rows (0.9 GiB) | 100M rows (8.6 GiB) |
+|---|---|---|
+| `row_delta` | 1.6s | 22s |
+| `freshness` | 0.7s | 15s |
+| `null_rate` (6 columns) | 3.2s | 101s |
+| `schema_drift` | <0.1s | 0.1s |
+| `sampled_checksum` (strategy: recent) | <0.1s | <0.1s |
+| `sampled_checksum` (strategy: mixed, n=100) | 1.4s | 38s |
+
+Client peak memory was **57 MB at both scales** — every check either
+aggregates inside the database or fetches a fixed-size sample, so table
+growth costs the client nothing.
+
+Two honest observations from the 100M run:
+
+- Full-scan checks (`null_rate`, the `spread` half of `sampled_checksum`)
+  go I/O-bound once the table outgrows the database's cache — the jump from
+  3s to 101s is disk, not the tool. On tables that size, scope them down via
+  `overrides` (`null_rate: false`, `strategy: recent`, or a `where` window)
+  if the full default set is slower than your check interval.
+- Index-backed checks (`row_delta`, `freshness`, `recent` sampling) stay
+  cheap enough to run every few minutes at any of these scales.
+
 ## Connectors (v0.1)
 
 MySQL · PostgreSQL · BigQuery
