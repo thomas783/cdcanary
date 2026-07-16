@@ -98,6 +98,13 @@ cdcanary scan \
 docker compose down -v   # cleanup
 ```
 
+### Run it on a schedule (GitHub Actions)
+
+`cdcanary check` is designed to be a cron job, and GitHub Actions is the
+cheapest cron you already have. [`examples/github-actions`](examples/github-actions)
+has a copy-paste workflow: scheduled runs, secrets-based credentials, warn/fail
+mapped to run status, results kept as artifacts.
+
 ## Configuration
 
 Config describes **rules, not snapshots**. A schema pair re-discovers tables
