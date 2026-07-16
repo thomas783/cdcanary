@@ -6,7 +6,7 @@
 
 **A canary for your CDC pipeline — catches silent replication drift before your analysts do.**
 
-![CDCanary demo — one scan catches four kinds of silent drift](docs/demo.gif)
+![CDCanary demo — one scan catches five kinds of silent drift](docs/demo.gif)
 
 CDC pipelines fail loudly when they crash — and silently when they don't.
 A column added mid-stream lands as `NULL` in your warehouse. A backfill quietly
