@@ -23,7 +23,7 @@ disagree.
 │  MySQL   │ ───────────────────────────────────────────────▶ │ BigQuery  │
 └────┬─────┘                                                  └─────┬─────┘
      │                    ┌───────────┐                             │
-     └───── aggregate ───▶│ 🐤 CDCanary│◀──── aggregate queries ────┘
+     └───── aggregate ───▶│  CDCanary │◀──── aggregate queries -────┘
             queries       └─────┬─────┘
                                 │  row delta · freshness · null-rate · schema drift
                                 ▼
@@ -97,6 +97,10 @@ cdcanary scan \
   --target postgres://demo:demo@127.0.0.1:15432/shop/public
 docker compose down -v   # cleanup
 ```
+
+The same seeds double as the integration suite — `pytest -m integration` boots
+them in throwaway [testcontainers](https://testcontainers.com/) and asserts
+every seeded drift is caught (runs in CI on each push).
 
 ### Run it on a schedule (GitHub Actions)
 

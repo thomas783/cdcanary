@@ -25,7 +25,7 @@ mysql = ["pymysql>=1.1"]
 postgres = ["psycopg[binary]>=3.1"]
 bigquery = ["google-cloud-bigquery>=3.11"]
 all = ["cdcanary[mysql,postgres,bigquery]"]
-dev = ["pytest>=8.0", "ruff>=0.4"]
+dev = ["pytest>=8.0", "ruff>=0.4", "testcontainers[mysql,postgres]>=4.4"]
 
 [project.scripts]
 cdcanary = "cdcanary.cli:main"
@@ -43,3 +43,10 @@ packages = ["src/cdcanary"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.pytest.ini_options]
+# integration tests need a Docker daemon — opt in with `pytest -m integration`
+addopts = '-m "not integration"'
+markers = [
+  "integration: spins up real MySQL/Postgres via testcontainers (needs Docker)",
+]
