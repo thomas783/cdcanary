@@ -1,0 +1,72 @@
+# Scheduled CDC drift check, no infrastructure required.
+#
+# Copy this file to .github/workflows/cdcanary-check.yml in the repo that holds
+# your cdcanary.yml (the service repo that owns the pipeline, or a dedicated
+# config repo), commit, done — GitHub runs the check on the cron below.
+#
+# Secrets to add (repo Settings → Secrets and variables → Actions):
+#   MYSQL_PASSWORD           whatever your cdcanary.yml reads via "env:MYSQL_PASSWORD"
+#   CDCANARY_SLACK_WEBHOOK   optional — Slack incoming webhook for alerts
+#   GCP_SA_KEY               optional — BigQuery service-account JSON (see the
+#                            commented step below)
+
+name: cdcanary
+
+on:
+  schedule:
+    - cron: "*/30 * * * *" # every 30 min; GitHub may delay runs a few minutes
+  workflow_dispatch: # manual runs from the Actions tab
+
+# One check at a time. A slow run must not stack with the next tick —
+# overlapping row counts on the same tables just produce confusing diffs.
+concurrency:
+  group: cdcanary
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7 # brings in cdcanary.yml
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Pick the extras matching your connectors: mysql, postgres, bigquery, all
+      - name: Install cdcanary
+        run: pip install "cdcanary[all]"
+
+      # BigQuery targets only: keep the service-account JSON in GCP_SA_KEY,
+      # write it to disk at runtime, and reference it from cdcanary.yml as
+      #   credentials: env:GOOGLE_APPLICATION_CREDENTIALS
+      # - name: Write BigQuery credentials
+      #   env:
+      #     GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      #   run: printf '%s' "$GCP_SA_KEY" > "$RUNNER_TEMP/gcp-sa.json"
+
+      - name: Run checks
+        env:
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          CDCANARY_SLACK_WEBHOOK: ${{ secrets.CDCANARY_SLACK_WEBHOOK }}
+          # GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcp-sa.json
+        run: |
+          set +e
+          cdcanary check -c cdcanary.yml --json | tee results.json
+          rc=${PIPESTATUS[0]}
+          # Exit contract: 0 all green, 1 warnings, 2 failures/errors.
+          # Warnings annotate the run but keep it green — delete these three
+          # lines if a warning should fail the workflow too.
+          if [ "$rc" -eq 1 ]; then
+            echo "::warning::cdcanary reported warnings — see the results artifact"
+            rc=0
+          fi
+          exit "$rc"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cdcanary-results-${{ github.run_id }}
+          path: results.json
+          retention-days: 14
