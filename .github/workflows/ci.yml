@@ -29,3 +29,23 @@ jobs:
 
       - name: Test
         run: uv run pytest -q
+
+  # Real MySQL + Postgres via testcontainers, seeded with examples/demo —
+  # exercises the actual adapters (dialect SQL, coarse-type normalization)
+  # and keeps the README demo honest.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          uv venv
+          uv pip install -e ".[all,dev]"
+
+      - name: Integration tests
+        run: uv run pytest -m integration -v
