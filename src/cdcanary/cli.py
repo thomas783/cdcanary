@@ -90,8 +90,9 @@ def _print_results(results: list[CheckResult], as_json: bool) -> None:
         click.echo(json.dumps([asdict(r) for r in results], default=str, ensure_ascii=False))
         return
     width = max((len(r.pair) for r in results), default=4)
+    cwidth = max((len(r.check) for r in results), default=10)
     for r in results:
-        click.echo(f"{_STATUS_MARK[r.status]}  {r.pair:<{width}}  {r.check:<14}  {r.message}")
+        click.echo(f"{_STATUS_MARK[r.status]}  {r.pair:<{width}}  {r.check:<{cwidth}}  {r.message}")
 
 
 def _scan_config(source: str, target: str, tables: tuple[str, ...]) -> config_mod.Config:
