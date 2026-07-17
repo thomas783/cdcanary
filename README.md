@@ -32,15 +32,17 @@ disagree.
 
 ## Approach
 
-CDCanary deliberately does **not** do row-level diffing. Aggregate signals
-(counts, timestamps, null fractions, schemas) catch the failure modes that
-actually happen in CDC pipelines, run in seconds on billion-row tables, and
-keep the adapter surface small enough to maintain. It monitors continuously —
-this is a canary you run from cron, not a one-off migration validator.
+CDCanary deliberately does **not** do full row-level diffing. Aggregate
+signals (counts, timestamps, null fractions, schemas) catch the failure modes
+that actually happen in CDC pipelines, run in seconds on billion-row tables,
+and keep the adapter surface small enough to maintain. It monitors
+continuously — this is a canary you run from cron, not a one-off migration
+validator.
 
-The known blind spot: rows whose *values* are wrong while counts and null
-rates still match (e.g. lost UPDATE events). A sampled-checksum check is on
-the roadmap to cover that probabilistically without paying full-diff costs.
+Rows whose *values* are wrong while every aggregate still matches (lossy
+casts, timezone shifts, lost UPDATE events) are covered by `sampled_checksum`:
+a fixed-size key sample compared content-wise on both sides — value-level
+verification at a constant cost, never a full-table diff.
 
 ## Checks
 
@@ -165,13 +167,14 @@ pairs:
   - name: shop
     source: { connection: mysql_prod, schema: shop }
     target: { connection: bq_raw, schema: raw_shop }
-    tables: ["*", "!tmp_*"]
-    # target_table: "shop_{table}"   # uncomment if the CDC tool renames tables           # globs; "!" excludes
+    tables: ["*", "!tmp_*"]           # globs; "!" excludes
+    # target_table: "shop_{table}"    # uncomment if the CDC tool renames tables
     defaults:                         # applied to every discovered table
-      row_delta:    { tolerance_pct: 0.5 }
-      freshness:    { column: auto, max_lag_minutes: 60 }
-      null_rate:    { columns: auto, max_diff_pp: 1.0 }
-      schema_drift: { ignore_columns: [datastream_metadata] }
+      row_delta:        { tolerance_pct: 0.5 }
+      freshness:        { column: auto, max_lag_minutes: 60 }
+      null_rate:        { columns: auto, max_diff_pp: 1.0 }
+      schema_drift:     { ignore_columns: [datastream_metadata] }
+      sampled_checksum: { key: auto, sample_size: 100 }   # strategy: mixed
     overrides:                        # applied top-to-bottom; later rules win
       - match: "log_*"                # glob, exact name, or a list of either
         checks:
